@@ -3,7 +3,7 @@
 #include "bit.hpp"
 
 int main() {
-  jcy::bit<uint8_t, true> bit2;
+  jcy::bit<uint64_t, true> bit2;
 
   bit2.push_with_resize(&bit2.bit_holder_, 1);
   bit2.push_with_resize(&bit2.bit_holder_, 0);

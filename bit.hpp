@@ -12,13 +12,14 @@
 #ifndef BIT_HPP_
 #define BIT_HPP_
 
+#include <array>
 #include <cstdint>
 #include <exception>
 #include <type_traits>
 #include <vector>
 
 namespace jcy {
-template <class T = uint8_t, bool MSBFIRST = true,
+template <class T = uint8_t, bool MSB_FIRST = true,
           class = typename std::enable_if<std::is_unsigned<T>::value>::type>
 class bit {
  public:
@@ -31,6 +32,23 @@ class bit {
   static const T ZERO = T(0);
   static const size_t T_BYTE_SIZE = sizeof(T);
   static const size_t T_BIT_SIZE = 8 * sizeof(T);
+
+ public:
+  static constexpr value_type create_bit_pattern(size_t i) {
+    return ONE << (MSB_FIRST ? (T_BIT_SIZE - 1) - i : i);
+  }
+
+  template <size_t... i>
+  static constexpr auto create_bit_pattern_array(std::index_sequence<i...>) {
+    return std::array<value_type, sizeof...(i)>{{create_bit_pattern(i)...}};
+  }
+
+  static constexpr auto create_bit_pattern_array() {
+    return create_bit_pattern_array(std::make_index_sequence<T_BIT_SIZE>{});
+  }
+
+ public:
+  static constexpr auto BIT_PATTERNS = create_bit_pattern_array();
 
   // public:
   //  class iterator;
@@ -185,14 +203,8 @@ void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::push_with_resize(
   }
 
   if (value == ONE) {
-    if (MSB_FIRST) {
-      *(holder->last_byte_holder_) =
-          *(holder->last_byte_holder_) |
-          (ONE << ((T_BIT_SIZE - 1) - holder->next_bit_position_));
-    } else {
-      *(holder->last_byte_holder_) =
-          *(holder->last_byte_holder_) | (ONE << holder->next_bit_position_);
-    }
+    *(holder->last_byte_holder_) =
+        *(holder->last_byte_holder_) | BIT_PATTERNS[holder->next_bit_position_];
   }
 
   holder->next_bit_position_++;
