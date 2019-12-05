@@ -108,17 +108,13 @@ class bit {
   bit(size_type n, const K& val);
 
   bit(const bit& x);
-
   bit(bit&& x);
+  bit(std::initializer_list<value_type> il);
+  bit(const value_type* data, size_type size);
+  bit(const value_type* data, size_type size, size_type bit_count);
 
-  template <typename K>
-  bit(std::initializer_list<K> il);
-
-  template <typename K>
-  bit(const K* data, size_type size);
-
-  template <class InputIterator>
-  bit(InputIterator first, InputIterator last);
+  // template <class InputIterator>
+  // bit(InputIterator first, InputIterator last);
 
   // destructor
   ~bit();

@@ -3,7 +3,7 @@
 #include "bit.hpp"
 
 int main() {
-  jcy::bit bit2;
+  jcy::bit<uint64_t> bit2;
 
   std::cout << "empty " << bit2.empty() << std::endl;
   bit2.push_with_resize(&bit2.bit_holder_, 1);
@@ -41,8 +41,16 @@ int main() {
   bit2.push_bytes(bytes.data(), bytes.size());
   std::cout << std::dec << "size " << bit2.size() << std::endl;
 
-  for (size_t i = 0; i < bit2.buffer_size(); i++)
-    std::cout << "value " << std::hex << static_cast<uint64_t>(bit2.data()[i])
-              << std::endl;
+  std::chrono::high_resolution_clock::time_point start, end;
+
+  bit2.reserve(1000000);
+  start = std::chrono::high_resolution_clock::now();
+  for (size_t i = 0; i < 20000000; i++) {
+    bit2.push(0);
+  }
+  end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> dur = end - start;
+  std::cout << dur.count() << std::endl;
+  std::cout << "write " << 20000000 / dur.count() << " bits/s" << std::endl;
   return 0;
 }
