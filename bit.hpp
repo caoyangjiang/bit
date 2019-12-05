@@ -15,11 +15,12 @@
 #include <array>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
 namespace jcy {
-template <class T = uint8_t, bool MSB_FIRST = true,
+template <class T = uint8_t, bool MSB_TO_LSB = true,
           class = typename std::enable_if<std::is_unsigned<T>::value>::type>
 class bit {
  public:
@@ -28,14 +29,16 @@ class bit {
   typedef const T& const_reference;
   typedef size_t size_type;
   typedef std::vector<T> container_type;
-  static const T ONE = T(1);
-  static const T ZERO = T(0);
-  static const size_t T_BYTE_SIZE = sizeof(T);
-  static const size_t T_BIT_SIZE = 8 * sizeof(T);
+
+  static const value_type ONE = value_type(1);
+  static const value_type ZERO = value_type(0);
+  static const value_type VALUE_MAX = std::numeric_limits<value_type>::max();
+  static const size_t T_BYTE_SIZE = sizeof(value_type);
+  static const size_t T_BIT_SIZE = 8 * sizeof(value_type);
 
  public:
   static constexpr value_type create_bit_pattern(size_t i) {
-    return ONE << (MSB_FIRST ? (T_BIT_SIZE - 1) - i : i);
+    return ONE << (MSB_TO_LSB ? (T_BIT_SIZE - 1) - i : i);
   }
 
   template <size_t... i>
@@ -47,8 +50,24 @@ class bit {
     return create_bit_pattern_array(std::make_index_sequence<T_BIT_SIZE>{});
   }
 
+  static constexpr value_type create_mask_pattern(size_t i) {
+    value_type mask = ZERO;
+    for (size_t d = 0; d <= i; d++) mask |= create_bit_pattern(d);
+    return mask;
+  }
+
+  template <size_t... i>
+  static constexpr auto create_mask_pattern_array(std::index_sequence<i...>) {
+    return std::array<value_type, sizeof...(i)>{{create_mask_pattern(i)...}};
+  }
+
+  static constexpr auto create_mask_pattern_array() {
+    return create_mask_pattern_array(std::make_index_sequence<T_BIT_SIZE>{});
+  }
+
  public:
   static constexpr auto BIT_PATTERNS = create_bit_pattern_array();
+  static constexpr auto MASK_PATTERNS = create_mask_pattern_array();
 
   // public:
   //  class iterator;
@@ -104,9 +123,10 @@ class bit {
   // capacity
   size_type size() const noexcept;
   void resize(size_type n);
-  size_type capacity() const noexcept;
-  bool empty() const noexcept;
+  void resize(size_type n, const value_type& val);
   void reserve(size_type n);
+  size_type buffer_size() const noexcept;
+  bool empty() const noexcept;
 
   // element access
   value_type operator[](size_type n) const;
@@ -118,26 +138,14 @@ class bit {
   bit sub_range(size_type begin, size_type end) const;
 
   // modifiers
-  template <typename K,
-            typename std::enable_if<std::is_integral<K>::value>::type>
-  void push_bit(K value);
+  void push(value_type value);
+  void pop();
+  void replace(size_type position, value_type value);
+  void push_byte(uint8_t value);
+  void push_bytes(const uint8_t* data, size_type n);
 
-  template <typename K,
-            typename std::enable_if<std::is_integral<K>::value>::type>
-  void replace_bit(size_type position, K value);
-
-  template <typename K,
-            typename std::enable_if<std::is_integral<K>::value>::type>
-  void push_trailing_bit(K pattern);
-
-  template <typename K>
-  void push_bytes(K value);
-
-  template <typename K>
-  void push_bytes(const K* data, size_type n);
-
-  template <class InputIterator>
-  void push_bytes(InputIterator first, InputIterator last);
+  // template <class InputIterator>
+  // void push_bytes(InputIterator first, InputIterator last);
 
   void clear() noexcept;
 
@@ -146,9 +154,8 @@ class bit {
     explicit bit_holder(container_type* container) { container_ = container; }
 
     void initialize() {
-      container_->resize(1);
-      last_byte_holder_ = &(container_->back());
-      next_bit_position_ = 0;
+      container_->resize(0);
+      next_bit_position_ = T_BIT_SIZE;
     }
 
     T* last_byte_holder_ = nullptr;
@@ -161,35 +168,35 @@ class bit {
   inline void clear(bit_holder* holder);
   inline value_type bit_value_at(bit_holder* holder, size_type position);
   inline size_type bit_count(const bit_holder& holder) const noexcept;
-  inline size_type bit_remainder(size_type n) noexcept;
+  inline size_type bit_remainder(const bit_holder& holder) noexcept;
 
  public:
   container_type buffer_;
   bit_holder bit_holder_;
 };
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::bit() : bit_holder_(&buffer_) {
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::bit() : bit_holder_(&buffer_) {
   bit_holder_.initialize();
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::~bit() {}
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::~bit() {}
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-const typename bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::value_type*
-bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::data() const noexcept {
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+const typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::value_type*
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::data() const noexcept {
   return buffer_.data();
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-typename bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::value_type*
-bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::data() noexcept {
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::value_type*
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::data() noexcept {
   return buffer_.data();
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::push_with_resize(
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::push_with_resize(
     bit_holder* holder, value_type value) {
   if ((value != ZERO) && (value != ONE)) {
     throw std::invalid_argument("input argument is not one or zero.");
@@ -210,8 +217,8 @@ void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::push_with_resize(
   holder->next_bit_position_++;
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::pop_with_resize(
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::pop_with_resize(
     bit_holder* holder) {
   if (holder->next_bit_position_ == 0) {
     if (holder->container_->size() > 1) {
@@ -224,14 +231,15 @@ void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::pop_with_resize(
   holder->next_bit_position_--;
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-void bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::clear(bit_holder* holder) {
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::clear(
+    bit_holder* holder) {
   holder->initialize();
 }
 
-template <class BIT_CONTAINER_TYPE, bool MSB_FIRST, class TYPE_CHECK>
-typename bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::value_type
-bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::bit_value_at(
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::value_type
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::bit_value_at(
     bit_holder* holder, size_type position) {
   if (position >= (holder->container_->size() - 1) * T_BIT_SIZE +
                       holder->next_bit_position_) {
@@ -242,8 +250,71 @@ bit<BIT_CONTAINER_TYPE, MSB_FIRST, TYPE_CHECK>::bit_value_at(
   size_type bit_position = position % T_BIT_SIZE;
   value_type byte = holder->container_->at(byte_position);
   return (byte >>
-          (MSB_FIRST ? ((T_BIT_SIZE - 1) - bit_position) : bit_position)) &
+          (MSB_TO_LSB ? ((T_BIT_SIZE - 1) - bit_position) : bit_position)) &
          ONE;
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::size_type
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::bit_count(
+    const bit_holder& holder) const noexcept {
+  return (holder.container_->size() - 1) * T_BIT_SIZE +
+         holder.next_bit_position_;
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::size_type
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::bit_remainder(
+    const bit_holder& holder) noexcept {
+  return T_BIT_SIZE - holder.next_bit_position_;
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::size_type
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::size() const noexcept {
+  return bit_count(bit_holder_);
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::reserve(size_type n) {
+  buffer_.reserve((n + T_BIT_SIZE - 1) / T_BIT_SIZE);
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::resize(size_type n) {
+  buffer_.resize((n + T_BIT_SIZE - 1) / T_BIT_SIZE);
+  bit_holder_.last_byte_holder_ = &(bit_holder_.container->back());
+  bit_holder_.next_bit_position_ =
+      (n % T_BIT_SIZE) == 0 ? T_BIT_SIZE : (n % T_BIT_SIZE);
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+void bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::resize(
+    size_type n, const value_type& value) {
+  if ((value != ZERO) && (value != ONE)) {
+    throw std::invalid_argument("input argument is not one or zero.");
+  }
+
+  const value_type element_value = value == ONE ? VALUE_MAX : ZERO;
+  buffer_.resize((n + T_BIT_SIZE - 1) / T_BIT_SIZE, element_value);
+  bit_holder_.last_byte_holder_ = &(bit_holder_.container_->back());
+  bit_holder_.next_bit_position_ =
+      (n % T_BIT_SIZE) == 0 ? T_BIT_SIZE : (n % T_BIT_SIZE);
+
+  // keep unused bits zero
+  *bit_holder_.last_byte_holder_ =
+      MASK_PATTERNS[bit_holder_.next_bit_position_ - 1];
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+typename bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::size_type
+bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::buffer_size() const noexcept {
+  return buffer_.size();
+}
+
+template <class BIT_CONTAINER_TYPE, bool MSB_TO_LSB, class TYPE_CHECK>
+bool bit<BIT_CONTAINER_TYPE, MSB_TO_LSB, TYPE_CHECK>::empty() const noexcept {
+  return bit_count(bit_holder_) == 0;
 }
 
 }  // namespace jcy
